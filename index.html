@@ -274,6 +274,12 @@
             <input type="text" id="f_solicitante" required placeholder="Ex: Larissa Pacheco">
           </div>
           <div class="field">
+            <label for="f_empresa">Empresa *</label>
+            <input type="text" id="f_empresa" required placeholder="Nome da empresa/cliente">
+          </div>
+        </div>
+        <div class="grid">
+          <div class="field">
             <label for="f_time">Time *</label>
             <select id="f_time" required>
               <option value="" disabled selected>Selecione...</option>
@@ -285,8 +291,6 @@
               <option>Gabryel</option>
             </select>
           </div>
-        </div>
-        <div class="grid">
           <div class="field">
             <label for="f_tipo">Tipo de demanda *</label>
             <select id="f_tipo" required>
@@ -298,6 +302,8 @@
               <option>Outro</option>
             </select>
           </div>
+        </div>
+        <div class="grid">
           <div class="field">
             <label for="f_prioridade">Prioridade</label>
             <select id="f_prioridade">
@@ -305,14 +311,14 @@
               <option value="Urgente">Urgente</option>
             </select>
           </div>
+          <div class="field">
+            <label for="f_contato">Contato para retorno (e-mail, Teams ou WhatsApp)</label>
+            <input type="text" id="f_contato" placeholder="Opcional">
+          </div>
         </div>
         <div class="field">
           <label for="f_descricao">Descrição da demanda *</label>
           <textarea id="f_descricao" required placeholder="Descreva o que precisa ser feito, com o máximo de detalhes possível..."></textarea>
-        </div>
-        <div class="field">
-          <label for="f_contato">Contato para retorno (e-mail, Teams ou WhatsApp)</label>
-          <input type="text" id="f_contato" placeholder="Opcional">
         </div>
         <button class="btn" type="submit">Abrir chamado</button>
       </form>
@@ -484,6 +490,12 @@
         <input type="text" id="e_solicitante" required>
       </div>
       <div class="field">
+        <label for="e_empresa">Empresa *</label>
+        <input type="text" id="e_empresa" required>
+      </div>
+    </div>
+    <div class="grid">
+      <div class="field">
         <label for="e_time">Time *</label>
         <select id="e_time" required>
           <option value="" disabled>Selecione...</option>
@@ -495,8 +507,6 @@
           <option>Gabryel</option>
         </select>
       </div>
-    </div>
-    <div class="grid">
       <div class="field">
         <label for="e_tipo">Tipo de demanda *</label>
         <select id="e_tipo" required>
@@ -507,6 +517,8 @@
           <option>Outro</option>
         </select>
       </div>
+    </div>
+    <div class="grid">
       <div class="field">
         <label for="e_prioridade">Prioridade</label>
         <select id="e_prioridade">
@@ -514,14 +526,14 @@
           <option value="Urgente">Urgente</option>
         </select>
       </div>
+      <div class="field">
+        <label for="e_contato">Contato para retorno</label>
+        <input type="text" id="e_contato">
+      </div>
     </div>
     <div class="field">
       <label for="e_descricao">Descrição da demanda *</label>
       <textarea id="e_descricao" required></textarea>
-    </div>
-    <div class="field">
-      <label for="e_contato">Contato para retorno</label>
-      <input type="text" id="e_contato">
     </div>
     <div id="e_finalizacaoBloco" style="display:none;">
       <div class="field">
@@ -587,13 +599,14 @@
    ========================================================================= */
 
 const FIREBASE_CONFIG = {
-  apiKey: "AIzaSyBJ-WC76hf2XkydrdO1lsxg-zlGeh8Mb2E",
-  authDomain: "sac-tributario.firebaseapp.com",
-  projectId: "sac-tributario",
-  storageBucket: "sac-tributario.firebasestorage.app",
-  messagingSenderId: "1039173466053",
-  appId: "1:1039173466053:web:ffdf7888e796f540143dac"
+  apiKey: "SUA_API_KEY",
+  authDomain: "SEU_PROJETO.firebaseapp.com",
+  projectId: "SEU_PROJETO",
+  storageBucket: "SEU_PROJETO.appspot.com",
+  messagingSenderId: "SEU_SENDER_ID",
+  appId: "SEU_APP_ID"
 };
+
 const COLLECTION_NAME = "chamados";
 const isDemoMode = FIREBASE_CONFIG.apiKey === "SUA_API_KEY";
 
@@ -759,6 +772,7 @@ document.getElementById("formAbrir").addEventListener("submit", async (e) => {
   e.preventDefault();
   const data = {
     solicitante: document.getElementById("f_solicitante").value.trim(),
+    empresa: document.getElementById("f_empresa").value.trim(),
     setor: "Tributário",
     time: document.getElementById("f_time").value,
     tipo: document.getElementById("f_tipo").value,
@@ -772,7 +786,7 @@ document.getElementById("formAbrir").addEventListener("submit", async (e) => {
     observacaoFinalizacao: null,
     atendente: null
   };
-  if(!data.solicitante || !data.time || !data.tipo || !data.descricao){
+  if(!data.solicitante || !data.empresa || !data.time || !data.tipo || !data.descricao){
     showToast("Preencha os campos obrigatórios.");
     return;
   }
@@ -805,6 +819,7 @@ function renderAcompanhar(){
   if(busca){
     list = list.filter(c =>
       (c.solicitante || "").toLowerCase().includes(busca) ||
+      (c.empresa || "").toLowerCase().includes(busca) ||
       ticketNumber(c).toLowerCase().includes(busca)
     );
   }
@@ -877,6 +892,7 @@ function renderSac(){
   if(busca){
     list = list.filter(c =>
       (c.solicitante || "").toLowerCase().includes(busca) ||
+      (c.empresa || "").toLowerCase().includes(busca) ||
       ticketNumber(c).toLowerCase().includes(busca)
     );
   }
@@ -893,6 +909,7 @@ function ticketCardHTML(c, sacView){
   const meta = `
     <div class="ticket-meta">
       <span>👤 ${escapeHtml(c.solicitante || "—")}</span>
+      <span>🏢 ${escapeHtml(c.empresa || "—")}</span>
       <span>🧭 Time: ${escapeHtml(c.time || "—")}</span>
       <span>📅 Solicitado: ${fmtDate(c.dataSolicitacao)}</span>
       ${c.status === "concluido" ? `<span>✅ Finalizado: ${fmtDate(c.dataFinalizacao)}</span>` : ""}
@@ -976,6 +993,7 @@ async function handleTicketAction(id, action, chamado){
     document.getElementById("modalEditarSub").textContent =
       `${ticketNumber(chamado)} — aberto em ${fmtDate(chamado.dataSolicitacao)}`;
     document.getElementById("e_solicitante").value = chamado.solicitante || "";
+    document.getElementById("e_empresa").value = chamado.empresa || "";
     document.getElementById("e_time").value = chamado.time || "";
     document.getElementById("e_tipo").value = chamado.tipo || "Outro";
     document.getElementById("e_prioridade").value = chamado.prioridade || "Normal";
@@ -1043,15 +1061,17 @@ document.getElementById("e_cancelar").addEventListener("click", () => {
 
 document.getElementById("e_salvar").addEventListener("click", async () => {
   const solicitante = document.getElementById("e_solicitante").value.trim();
+  const empresa = document.getElementById("e_empresa").value.trim();
   const time = document.getElementById("e_time").value;
   const tipo = document.getElementById("e_tipo").value;
   const descricao = document.getElementById("e_descricao").value.trim();
-  if(!solicitante || !time || !tipo || !descricao){
+  if(!solicitante || !empresa || !time || !tipo || !descricao){
     showToast("Preencha os campos obrigatórios.");
     return;
   }
   const patch = {
     solicitante,
+    empresa,
     setor: "Tributário",
     time,
     tipo,
