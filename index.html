@@ -599,12 +599,13 @@
    ========================================================================= */
 
 const FIREBASE_CONFIG = {
-  apiKey: "SUA_API_KEY",
-  authDomain: "SEU_PROJETO.firebaseapp.com",
-  projectId: "SEU_PROJETO",
-  storageBucket: "SEU_PROJETO.appspot.com",
-  messagingSenderId: "SEU_SENDER_ID",
-  appId: "SEU_APP_ID"
+  apiKey: "AIzaSyBJ-WC76hf2XkydrdO1lsxg-zlGeh8Mb2E",
+  authDomain: "sac-tributario.firebaseapp.com",
+  databaseURL: "https://sac-tributario-default-rtdb.firebaseio.com",
+  projectId: "sac-tributario",
+  storageBucket: "sac-tributario.firebasestorage.app",
+  messagingSenderId: "1039173466053",
+  appId: "1:1039173466053:web:ffdf7888e796f540143dac"
 };
 
 const COLLECTION_NAME = "chamados";
@@ -656,38 +657,41 @@ function localBackend(){
   };
 }
 
-async function firestoreBackend(){
-  const { initializeApp } = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js");
-  const {
-    getFirestore, collection, addDoc, doc, updateDoc, deleteDoc,
-    onSnapshot, query, orderBy, serverTimestamp
-  } = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js");
+async function realtimeBackend(){
+  // Carrega o SDK compat do Firebase (Realtime Database)
+  await Promise.all([
+    new Promise(res=>{ const s=document.createElement('script'); s.src='https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js'; s.onload=res; document.head.appendChild(s); }),
+  ]);
+  await new Promise(res=>{ const s=document.createElement('script'); s.src='https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js'; s.onload=res; document.head.appendChild(s); });
 
-  const app = initializeApp(FIREBASE_CONFIG);
-  const db = getFirestore(app);
-  const colRef = collection(db, COLLECTION_NAME);
+  const app = firebase.initializeApp(FIREBASE_CONFIG);
+  const db  = firebase.database();
+  const ref = db.ref(COLLECTION_NAME);
 
   return {
     async add(data){
-      const ref = await addDoc(colRef, data);
-      return ref.id;
+      const newRef = ref.push();
+      await newRef.set({ id: newRef.key, ...data });
+      return newRef.key;
     },
     async update(id, patch){
-      await updateDoc(doc(db, COLLECTION_NAME, id), patch);
+      await ref.child(id).update(patch);
     },
     async remove(id){
-      await deleteDoc(doc(db, COLLECTION_NAME, id));
+      await ref.child(id).remove();
     },
     subscribe(cb){
-      const q = query(colRef, orderBy("dataSolicitacao", "desc"));
-      return onSnapshot(q, snap => {
+      const handler = snap => {
         const list = [];
-        snap.forEach(d => list.push({ id: d.id, ...d.data() }));
+        snap.forEach(child => list.push(child.val()));
+        list.sort((a,b) => (b.dataSolicitacao||0) - (a.dataSolicitacao||0));
         cb(list);
-      }, err => {
-        console.error("Erro ao ler Firestore:", err);
-        showToast("Erro ao conectar ao Firestore. Veja o console.");
+      };
+      ref.on('value', handler, err => {
+        console.error('Erro ao ler Realtime DB:', err);
+        showToast('Erro ao conectar ao banco de dados.');
       });
+      return () => ref.off('value', handler);
     }
   };
 }
@@ -705,8 +709,8 @@ function showToast(msg){
 function toMillis(ts){
   if(!ts) return null;
   if(typeof ts === "number") return ts;
-  if(ts.toMillis) return ts.toMillis();
-  if(ts.toDate) return ts.toDate().getTime();
+  if(ts && ts.toMillis) return ts.toMillis();
+  if(ts && ts.toDate)   return ts.toDate().getTime();
   return null;
 }
 
@@ -1208,7 +1212,7 @@ function renderRelatorios(){
     backend = localBackend();
   } else {
     try{
-      backend = await firestoreBackend();
+      backend = await realtimeBackend();
     }catch(err){
       console.error("Falha ao iniciar Firebase, usando modo demonstração:", err);
       document.getElementById("demoBadge").style.display = "inline-block";
