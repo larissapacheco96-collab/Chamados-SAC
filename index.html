@@ -658,40 +658,53 @@ function localBackend(){
 }
 
 async function realtimeBackend(){
-  // Carrega o SDK compat do Firebase (Realtime Database)
-  await Promise.all([
-    new Promise(res=>{ const s=document.createElement('script'); s.src='https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js'; s.onload=res; document.head.appendChild(s); }),
-  ]);
-  await new Promise(res=>{ const s=document.createElement('script'); s.src='https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js'; s.onload=res; document.head.appendChild(s); });
+  function loadScript(src){
+    return new Promise((res, rej)=>{
+      if(document.querySelector(`script[src="${src}"]`)){ res(); return; }
+      const s = document.createElement('script');
+      s.src = src;
+      s.onload = res;
+      s.onerror = ()=>rej(new Error('Falha ao carregar SDK: '+src));
+      document.head.appendChild(s);
+    });
+  }
+  // Firebase 8.x compat — amplamente disponível e estável
+  const BASE = 'https://www.gstatic.com/firebasejs/8.10.1';
+  await loadScript(`${BASE}/firebase-app.js`);
+  await loadScript(`${BASE}/firebase-database.js`);
 
-  const app = firebase.initializeApp(FIREBASE_CONFIG);
-  const db  = firebase.database();
-  const ref = db.ref(COLLECTION_NAME);
+  // Evita "already initialized" em recarregamentos
+  const app = firebase.apps.length
+    ? firebase.app()
+    : firebase.initializeApp(FIREBASE_CONFIG);
+
+  const db     = firebase.database(app);
+  const dbRef  = db.ref(COLLECTION_NAME);
 
   return {
     async add(data){
-      const newRef = ref.push();
+      const newRef = dbRef.push();
       await newRef.set({ id: newRef.key, ...data });
       return newRef.key;
     },
     async update(id, patch){
-      await ref.child(id).update(patch);
+      await dbRef.child(id).update(patch);
     },
     async remove(id){
-      await ref.child(id).remove();
+      await dbRef.child(id).remove();
     },
     subscribe(cb){
       const handler = snap => {
         const list = [];
-        snap.forEach(child => list.push(child.val()));
+        snap.forEach(child => { const v = child.val(); if(v) list.push(v); });
         list.sort((a,b) => (b.dataSolicitacao||0) - (a.dataSolicitacao||0));
         cb(list);
       };
-      ref.on('value', handler, err => {
-        console.error('Erro ao ler Realtime DB:', err);
-        showToast('Erro ao conectar ao banco de dados.');
+      dbRef.on('value', handler, err => {
+        console.error('Realtime DB erro:', err);
+        showToast('Erro ao conectar. Verifique as regras do Firebase Realtime Database.');
       });
-      return () => ref.off('value', handler);
+      return () => dbRef.off('value', handler);
     }
   };
 }
