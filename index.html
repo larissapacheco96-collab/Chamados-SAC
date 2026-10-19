@@ -236,6 +236,48 @@
   }
   #toast.show{opacity:1;transform:translateX(-50%) translateY(-4px);}
 
+  /* ---- Anexos ---- */
+  .anexo-zona{
+    border:2px dashed var(--gray-200);
+    border-radius:8px;
+    padding:14px 16px;
+    text-align:center;
+    font-size:13px;
+    color:var(--gray-600);
+    cursor:pointer;
+    transition:border-color .2s, background .2s;
+    position:relative;
+  }
+  .anexo-zona:hover, .anexo-zona.drag-over{
+    border-color:var(--teal);
+    background:var(--teal-light);
+  }
+  .anexo-zona input[type=file]{
+    position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%;
+  }
+  .anexo-lista{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px;}
+  .anexo-item{
+    display:flex;align-items:center;gap:6px;
+    background:var(--gray-100);border-radius:6px;
+    padding:5px 8px;font-size:12px;color:var(--gray-800);
+    max-width:200px;
+  }
+  .anexo-item span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;}
+  .anexo-item button{
+    background:none;border:none;cursor:pointer;color:var(--gray-400);
+    font-size:14px;line-height:1;padding:0 2px;flex-shrink:0;
+  }
+  .anexo-item button:hover{color:var(--red);}
+  .anexo-preview img{max-width:100%;max-height:160px;border-radius:6px;margin-top:8px;display:block;}
+  .ticket-anexos{margin-top:10px;display:flex;flex-wrap:wrap;gap:8px;align-items:flex-start;}
+  .ticket-anexos img{max-width:120px;max-height:90px;border-radius:6px;cursor:pointer;border:1px solid var(--gray-200);}
+  .ticket-anexos a{
+    display:inline-flex;align-items:center;gap:5px;
+    background:var(--gray-100);border-radius:6px;padding:5px 9px;
+    font-size:12px;color:var(--teal-dark);text-decoration:none;
+  }
+  .ticket-anexos a:hover{background:var(--teal-light);}
+
   footer{
     text-align:center;color:var(--gray-400);font-size:12px;padding:30px 20px 40px;
   }
@@ -319,6 +361,15 @@
         <div class="field">
           <label for="f_descricao">Descrição da demanda *</label>
           <textarea id="f_descricao" required placeholder="Descreva o que precisa ser feito, com o máximo de detalhes possível..."></textarea>
+        </div>
+        <div class="field">
+          <label>Anexos (prints, documentos)</label>
+          <div class="anexo-zona" id="f_anexoZona">
+            <input type="file" id="f_anexoInput" multiple accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.zip">
+            📎 Clique para anexar ou arraste arquivos aqui<br>
+            <span class="hint">Imagens são comprimidas automaticamente. Máx. 900 KB por arquivo.</span>
+          </div>
+          <div class="anexo-lista" id="f_anexoLista"></div>
         </div>
         <button class="btn" type="submit">Abrir chamado</button>
       </form>
@@ -472,6 +523,15 @@
       <label for="m_obs">Observações da finalização</label>
       <textarea id="m_obs" placeholder="Opcional"></textarea>
     </div>
+    <div class="field">
+      <label>Anexos do retorno (prints, documentos)</label>
+      <div class="anexo-zona" id="m_anexoZona">
+        <input type="file" id="m_anexoInput" multiple accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.zip">
+        📎 Clique para anexar ou arraste arquivos aqui<br>
+        <span class="hint">Imagens são comprimidas automaticamente. Máx. 900 KB por arquivo.</span>
+      </div>
+      <div class="anexo-lista" id="m_anexoLista"></div>
+    </div>
     <div class="modal-actions">
       <button class="btn ghost" id="m_cancelar">Cancelar</button>
       <button class="btn" id="m_confirmar">Confirmar conclusão</button>
@@ -597,6 +657,126 @@
    (apenas para teste local — os dados não são compartilhados entre
    usuários/dispositivos nesse modo).
    ========================================================================= */
+
+/* ======================== ANEXOS — funções globais ======================== */
+
+function comprimirImagem(file, cb){
+  const reader = new FileReader();
+  reader.onload = e => {
+    const img = new Image();
+    img.onload = () => {
+      let w = img.width, h = img.height;
+      const MAX = 1600;
+      if(w > MAX || h > MAX){
+        const r = Math.min(MAX/w, MAX/h);
+        w = Math.round(w*r); h = Math.round(h*r);
+      }
+      const canvas = document.createElement('canvas');
+      canvas.width = w; canvas.height = h;
+      canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+      let q = 0.9, b64;
+      do { b64 = canvas.toDataURL('image/jpeg', q); q -= 0.05; }
+      while(b64.length > 900*1024 && q > 0.1);
+      cb({ b64, nome: file.name, tipo: 'imagem' });
+    };
+    img.src = e.target.result;
+  };
+  reader.readAsDataURL(file);
+}
+
+function lerArquivo(file, cb){
+  if(file.type.startsWith('image/')){
+    comprimirImagem(file, cb);
+    return;
+  }
+  if(file.size > 900*1024){
+    alert(`O arquivo "${file.name}" excede 900 KB. Por favor, reduza o tamanho antes de anexar.`);
+    return;
+  }
+  const reader = new FileReader();
+  reader.onload = e => cb({ b64: e.target.result, nome: file.name, tipo: 'arquivo' });
+  reader.readAsDataURL(file);
+}
+
+/* lista de anexos pendentes por zona */
+const _anexosPendentes = {};
+
+function iniciarZonaAnexo(zonaId, inputId, listaId){
+  const zona  = document.getElementById(zonaId);
+  const input = document.getElementById(inputId);
+  const lista = document.getElementById(listaId);
+  _anexosPendentes[listaId] = [];
+
+  function adicionarAnexo(anx){
+    _anexosPendentes[listaId].push(anx);
+    renderAnexoLista(listaId);
+  }
+
+  input.addEventListener('change', () => {
+    Array.from(input.files).forEach(f => lerArquivo(f, adicionarAnexo));
+    input.value = '';
+  });
+
+  zona.addEventListener('dragover', e => { e.preventDefault(); zona.classList.add('drag-over'); });
+  zona.addEventListener('dragleave', () => zona.classList.remove('drag-over'));
+  zona.addEventListener('drop', e => {
+    e.preventDefault();
+    zona.classList.remove('drag-over');
+    Array.from(e.dataTransfer.files).forEach(f => lerArquivo(f, adicionarAnexo));
+  });
+
+  /* Ctrl+V / Cmd+V — cola imagem da área de transferência */
+  document.addEventListener('paste', e => {
+    if(!zona.closest('.modal-overlay') && document.activeElement && document.activeElement.tagName === 'TEXTAREA') return;
+    const items = (e.clipboardData || e.originalEvent && e.originalEvent.clipboardData || {}).items || [];
+    for(const item of items){
+      if(item.kind === 'file' && item.type.startsWith('image/')){
+        const f = item.getAsFile();
+        if(f) lerArquivo(f, adicionarAnexo);
+      }
+    }
+  });
+}
+
+function renderAnexoLista(listaId){
+  const lista = document.getElementById(listaId);
+  const itens = _anexosPendentes[listaId] || [];
+  lista.innerHTML = itens.map((a, i) => `
+    <div class="anexo-item">
+      ${a.tipo === 'imagem' ? '🖼️' : '📄'}
+      <span title="${escapeHtmlG(a.nome)}">${escapeHtmlG(a.nome)}</span>
+      <button onclick="removerAnexoPendente('${listaId}',${i})" title="Remover">✕</button>
+    </div>`).join('');
+}
+
+window.removerAnexoPendente = function(listaId, idx){
+  if(_anexosPendentes[listaId]) _anexosPendentes[listaId].splice(idx, 1);
+  renderAnexoLista(listaId);
+};
+
+function limparAnexosPendentes(listaId){
+  _anexosPendentes[listaId] = [];
+  renderAnexoLista(listaId);
+}
+
+function escapeHtmlG(str){
+  return String(str).replace(/[&<>"']/g, s => ({
+    '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
+  }[s]));
+}
+
+function anexosHTML(lista){
+  if(!lista || lista.length === 0) return '';
+  const items = lista.map(a => {
+    if(a.tipo === 'imagem'){
+      return `<img src="${a.b64}" title="${escapeHtmlG(a.nome)}" onclick="this.requestFullscreen&&this.requestFullscreen()" style="cursor:zoom-in">`;
+    }
+    return `<a href="${a.b64}" download="${escapeHtmlG(a.nome)}" target="_blank">📄 ${escapeHtmlG(a.nome)}</a>`;
+  }).join('');
+  return `<div class="ticket-anexos">${items}</div>`;
+}
+
+/* ======================================================================== */
 
 const FIREBASE_CONFIG = {
   apiKey: "AIzaSyBJ-WC76hf2XkydrdO1lsxg-zlGeh8Mb2E",
@@ -785,8 +965,13 @@ document.querySelectorAll(".tab-btn").forEach(btn => {
 
 /* --------------------------- Abrir chamado -------------------------------- */
 
+/* Inicializar zonas de anexo */
+iniciarZonaAnexo("f_anexoZona", "f_anexoInput", "f_anexoLista");
+iniciarZonaAnexo("m_anexoZona", "m_anexoInput", "m_anexoLista");
+
 document.getElementById("formAbrir").addEventListener("submit", async (e) => {
   e.preventDefault();
+  const anexos = (_anexosPendentes["f_anexoLista"] || []).map(a => ({b64:a.b64, nome:a.nome, tipo:a.tipo}));
   const data = {
     solicitante: document.getElementById("f_solicitante").value.trim(),
     empresa: document.getElementById("f_empresa").value.trim(),
@@ -801,7 +986,8 @@ document.getElementById("formAbrir").addEventListener("submit", async (e) => {
     dataFinalizacao: null,
     ferramentaFinalizacao: null,
     observacaoFinalizacao: null,
-    atendente: null
+    atendente: null,
+    anexos: anexos.length ? anexos : null
   };
   if(!data.solicitante || !data.empresa || !data.time || !data.tipo || !data.descricao){
     showToast("Preencha os campos obrigatórios.");
@@ -809,6 +995,7 @@ document.getElementById("formAbrir").addEventListener("submit", async (e) => {
   }
   const id = await backend.add(data);
   e.target.reset();
+  limparAnexosPendentes("f_anexoLista");
   showToast("Chamado aberto com sucesso! Nº " + ticketNumber({dataSolicitacao:data.dataSolicitacao}));
 });
 
@@ -935,6 +1122,8 @@ function ticketCardHTML(c, sacView){
     </div>`;
   const desc = c.descricao ? `<div class="ticket-desc">${escapeHtml(c.descricao)}</div>` : "";
   const obs = c.observacaoFinalizacao ? `<div class="ticket-desc"><strong>Observação da finalização:</strong> ${escapeHtml(c.observacaoFinalizacao)}</div>` : "";
+  const anexosAbertura = c.anexos && c.anexos.length ? `<div style="margin-top:6px;font-size:12px;color:var(--gray-600)"><strong>📎 Anexos do chamado:</strong></div>${anexosHTML(c.anexos)}` : "";
+  const anexosRetorno = c.anexosRetorno && c.anexosRetorno.length ? `<div style="margin-top:6px;font-size:12px;color:var(--gray-600)"><strong>📎 Anexos do retorno:</strong></div>${anexosHTML(c.anexosRetorno)}` : "";
 
   let workflowBtns = "";
   if(sacView){
@@ -968,7 +1157,9 @@ function ticketCardHTML(c, sacView){
       </div>
       ${meta}
       ${desc}
+      ${anexosAbertura}
       ${obs}
+      ${anexosRetorno}
       ${actions}
     </div>`;
 }
@@ -1051,6 +1242,7 @@ wireTicketActions("listaRelatorio");
 /* Concluir */
 document.getElementById("m_cancelar").addEventListener("click", () => {
   document.getElementById("modalConcluir").classList.add("hidden");
+  limparAnexosPendentes("m_anexoLista");
   idParaConcluir = null;
 });
 
@@ -1058,14 +1250,17 @@ document.getElementById("m_confirmar").addEventListener("click", async () => {
   const ferramenta = document.getElementById("m_ferramenta").value;
   if(!ferramenta){ showToast("Selecione a ferramenta utilizada."); return; }
   const obs = document.getElementById("m_obs").value.trim();
+  const anexosRetorno = (_anexosPendentes["m_anexoLista"] || []).map(a => ({b64:a.b64, nome:a.nome, tipo:a.tipo}));
   await backend.update(idParaConcluir, {
     status: "concluido",
     dataFinalizacao: Date.now(),
     ferramentaFinalizacao: ferramenta,
     observacaoFinalizacao: obs || null,
-    atendente: sacAtendente
+    atendente: sacAtendente,
+    anexosRetorno: anexosRetorno.length ? anexosRetorno : null
   });
   document.getElementById("modalConcluir").classList.add("hidden");
+  limparAnexosPendentes("m_anexoLista");
   showToast("Chamado concluído com sucesso!");
   idParaConcluir = null;
 });
